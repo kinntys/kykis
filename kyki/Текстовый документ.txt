@@ -1,0 +1,1613 @@
+package com.kyki.kyki
+
+import android.content.Context
+import android.os.Bundle
+import android.os.Vibrator
+import android.os.VibrationEffect
+import android.os.Build
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.*
+import org.json.JSONArray
+import org.json.JSONObject
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+
+// ================================================================
+// THEME MANAGER
+// ================================================================
+object ThemeManager {
+    // Dark Theme
+    val DarkBackground = Color(0xFF0A0A0A)
+    val DarkSurface = Color(0xFF141414)
+    val DarkElevated = Color(0xFF1E1E1E)
+    val DarkBorder = Color(0xFF2A2A2A)
+
+    // Light Theme
+    val LightBackground = Color(0xFFF5F5F5)
+    val LightSurface = Color(0xFFFFFFFF)
+    val LightElevated = Color(0xFFF0F0F0)
+    val LightBorder = Color(0xFFE0E0E0)
+
+    // Accents
+    val Blue = Color(0xFF3B82F6)
+    val Green = Color(0xFF10B981)
+    val Red = Color(0xFFEF4444)
+    val Orange = Color(0xFFF59E0B)
+    val Purple = Color(0xFF8B5CF6)
+    val Pink = Color(0xFFEC4899)
+    val Teal = Color(0xFF14B8A6)
+    val Indigo = Color(0xFF6366F1)
+
+    fun getBackground(isDark: Boolean) = if (isDark) DarkBackground else LightBackground
+    fun getSurface(isDark: Boolean) = if (isDark) DarkSurface else LightSurface
+    fun getElevated(isDark: Boolean) = if (isDark) DarkElevated else LightElevated
+    fun getBorder(isDark: Boolean) = if (isDark) DarkBorder else LightBorder
+    fun getTextPrimary(isDark: Boolean) = if (isDark) Color.White else Color.Black
+    fun getTextSecondary(isDark: Boolean) = if (isDark) Color.Gray else Color.DarkGray
+}
+
+fun getAccentColor(name: String): Color = when (name) {
+    "blue" -> ThemeManager.Blue
+    "green" -> ThemeManager.Green
+    "orange" -> ThemeManager.Orange
+    "red" -> ThemeManager.Red
+    "purple" -> ThemeManager.Purple
+    "pink" -> ThemeManager.Pink
+    "teal" -> ThemeManager.Teal
+    "indigo" -> ThemeManager.Indigo
+    else -> ThemeManager.Blue
+}
+
+// ================================================================
+// DATA CLASSES
+// ================================================================
+data class CurrencyInfo(
+    val code: String,
+    val name: String,
+    val flag: String,
+    val apiId: Int,
+    val scale: Int,
+    val symbol: String = "",
+    val region: String = "Other"
+)
+
+data class CurrencyRate(
+    val code: String,
+    val rate: Double,
+    val previousRate: Double,
+    val changePercent: Double,
+    val timestamp: Long,
+    val buyRate: Double? = null,
+    val sellRate: Double? = null
+)
+
+data class AppSettings(
+    val themeMode: String = "system",
+    val accentColor: String = "blue",
+    val defaultCurrency: String = "USD",
+    val secondaryCurrency: String = "EUR",
+    val favorites: List<String> = listOf("USD", "EUR", "RUB"),
+    val showFlags: Boolean = true,
+    val showCurrencyNames: Boolean = true,
+    val compactMode: Boolean = false,
+    val autoRefresh: Boolean = true,
+    val refreshInterval: Int = 30,
+    val refreshOnStart: Boolean = true,
+    val calculatorPrecision: Int = 4,
+    val hapticFeedback: Boolean = true,
+    val defaultCalcAmount: Double = 100.0
+)
+
+val AVAILABLE_CURRENCIES = listOf(
+    CurrencyInfo("USD", "US Dollar", "🇺🇸", 145, 1, "$", "Major"),
+    CurrencyInfo("EUR", "Euro", "🇪🇺", 292, 1, "€", "Major"),
+    CurrencyInfo("GBP", "British Pound", "🇬🇧", 143, 1, "£", "Major"),
+    CurrencyInfo("JPY", "Japanese Yen", "🇯🇵", 122, 100, "¥", "Major"),
+    CurrencyInfo("CHF", "Swiss Franc", "🇨🇭", 130, 1, "Fr", "Major"),
+    CurrencyInfo("RUB", "Russian Ruble", "🇷🇺", 298, 100, "₽", "CIS"),
+    CurrencyInfo("UAH", "Ukrainian Hryvnia", "🇺🇦", 290, 100, "₴", "CIS"),
+    CurrencyInfo("KZT", "Kazakhstani Tenge", "🇰🇿", 301, 1000, "₸", "CIS"),
+    CurrencyInfo("BYN", "Belarusian Ruble", "🇧🇾", 0, 1, "Br", "CIS"),
+    CurrencyInfo("PLN", "Polish Zloty", "🇵🇱", 293, 10, "zł", "Europe"),
+    CurrencyInfo("CNY", "Chinese Yuan", "🇨🇳", 304, 10, "¥", "Asia"),
+    CurrencyInfo("INR", "Indian Rupee", "🇮🇳", 247, 100, "₹", "Asia"),
+    CurrencyInfo("CAD", "Canadian Dollar", "🇨🇦", 124, 1, "C$", "Americas"),
+    CurrencyInfo("AUD", "Australian Dollar", "🇦🇺", 170, 1, "A$", "Americas"),
+    CurrencyInfo("BRL", "Brazilian Real", "🇧🇷", 303, 10, "R$", "Americas"),
+    CurrencyInfo("AED", "UAE Dirham", "🇦🇪", 236, 10, "د.إ", "Middle East"),
+    CurrencyInfo("TRY", "Turkish Lira", "🇹🇷", 302, 10, "₺", "Middle East"),
+    CurrencyInfo("ZAR", "South African Rand", "🇿🇦", 162, 10, "R", "Africa"),
+    CurrencyInfo("NOK", "Norwegian Krone", "🇳🇴", 142, 10, "kr", "Nordic"),
+    CurrencyInfo("SEK", "Swedish Krona", "🇸🇪", 113, 10, "kr", "Nordic")
+)
+
+// ================================================================
+// SETTINGS MANAGER
+// ================================================================
+class SettingsManager(context: Context) {
+    private val prefs = context.getSharedPreferences("kyki_settings", Context.MODE_PRIVATE)
+    private val gson = Gson()
+
+    fun loadSettings(): AppSettings {
+        return AppSettings(
+            themeMode = prefs.getString("theme_mode", "system") ?: "system",
+            accentColor = prefs.getString("accent_color", "blue") ?: "blue",
+            defaultCurrency = prefs.getString("default_currency", "USD") ?: "USD",
+            secondaryCurrency = prefs.getString("secondary_currency", "EUR") ?: "EUR",
+            favorites = gson.fromJson(prefs.getString("favorites", "[\"USD\",\"EUR\",\"RUB\"]"), object : TypeToken<List<String>>() {}.type) ?: listOf("USD", "EUR", "RUB"),
+            showFlags = prefs.getBoolean("show_flags", true),
+            showCurrencyNames = prefs.getBoolean("show_currency_names", true),
+            compactMode = prefs.getBoolean("compact_mode", false),
+            autoRefresh = prefs.getBoolean("auto_refresh", true),
+            refreshInterval = prefs.getInt("refresh_interval", 30),
+            refreshOnStart = prefs.getBoolean("refresh_on_start", true),
+            calculatorPrecision = prefs.getInt("calculator_precision", 4),
+            hapticFeedback = prefs.getBoolean("haptic_feedback", true),
+            defaultCalcAmount = prefs.getFloat("default_calc_amount", 100.0f).toDouble()
+        )
+    }
+
+    fun saveSettings(settings: AppSettings) {
+        prefs.edit().apply {
+            putString("theme_mode", settings.themeMode)
+            putString("accent_color", settings.accentColor)
+            putString("default_currency", settings.defaultCurrency)
+            putString("secondary_currency", settings.secondaryCurrency)
+            putString("favorites", gson.toJson(settings.favorites))
+            putBoolean("show_flags", settings.showFlags)
+            putBoolean("show_currency_names", settings.showCurrencyNames)
+            putBoolean("compact_mode", settings.compactMode)
+            putBoolean("auto_refresh", settings.autoRefresh)
+            putInt("refresh_interval", settings.refreshInterval)
+            putBoolean("refresh_on_start", settings.refreshOnStart)
+            putInt("calculator_precision", settings.calculatorPrecision)
+            putBoolean("haptic_feedback", settings.hapticFeedback)
+            putFloat("default_calc_amount", settings.defaultCalcAmount.toFloat())
+            apply()
+        }
+    }
+}
+
+// ================================================================
+// CURRENCY REPOSITORY
+// ================================================================
+class CurrencyRepository {
+    private val cache = mutableMapOf<String, CurrencyRate>()
+
+    suspend fun fetchRates(settings: AppSettings): Map<String, CurrencyRate> = coroutineScope {
+        val result = mutableMapOf<String, CurrencyRate>()
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }.let {
+            SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(it.time)
+        }
+
+        val deferreds = AVAILABLE_CURRENCIES.filter { it.apiId != 0 }.map { currency ->
+            async(Dispatchers.IO) {
+                try {
+                    val url = "https://api.nbrb.by/exrates/rates/${currency.code}?parammode=2"
+                    val response = URL(url).readText()
+                    val json = JSONObject(response)
+                    val rate = json.getDouble("Cur_OfficialRate")
+                    val scale = json.getInt("Cur_Scale")
+                    val adjustedRate = rate / scale
+
+                    val historyUrl = "https://api.nbrb.by/exrates/rates/dynamics/${currency.apiId}?startdate=$yesterday&enddate=$today"
+                    val historyResponse = URL(historyUrl).readText()
+                    val historyArray = JSONArray(historyResponse)
+                    val previousRate = if (historyArray.length() > 1) {
+                        historyArray.getJSONObject(historyArray.length() - 2).getDouble("Cur_OfficialRate") / scale
+                    } else adjustedRate * 0.995
+
+                    val change = ((adjustedRate - previousRate) / previousRate) * 100
+
+                    currency.code to CurrencyRate(
+                        code = currency.code,
+                        rate = adjustedRate,
+                        previousRate = previousRate,
+                        changePercent = change,
+                        timestamp = System.currentTimeMillis(),
+                        buyRate = adjustedRate * 0.985,
+                        sellRate = adjustedRate * 1.015
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        }
+
+        deferreds.awaitAll().filterNotNull().forEach { pair ->
+            result[pair.first] = pair.second
+        }
+
+        result["BYN"] = CurrencyRate("BYN", 1.0, 1.0, 0.0, System.currentTimeMillis(), 1.0, 1.0)
+        cache.putAll(result)
+        result
+    }
+
+    fun convert(amount: Double, from: String, to: String, rates: Map<String, CurrencyRate>): Double {
+        val fromRate = rates[from]?.rate ?: 1.0
+        val toRate = rates[to]?.rate ?: 1.0
+        return (amount * fromRate) / toRate
+    }
+}
+
+// ================================================================
+// BASE CARD COMPONENT
+// ================================================================
+@Composable
+fun BaseCard(
+    modifier: Modifier = Modifier,
+    isDark: Boolean,
+    cornerRadius: Dp = 16.dp,
+    hasBorder: Boolean = true,
+    hasShadow: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val background = ThemeManager.getSurface(isDark)
+    val borderColor = ThemeManager.getBorder(isDark)
+
+    val baseModifier = modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(cornerRadius))
+        .background(background)
+        .then(
+            if (hasBorder) {
+                Modifier.border(
+                    width = 1.dp,
+                    color = borderColor,
+                    shape = RoundedCornerShape(cornerRadius)
+                )
+            } else Modifier
+        )
+        .then(
+            if (hasShadow && !isDark) {
+                Modifier.shadow(
+                    elevation = 4.dp,
+                    shape = RoundedCornerShape(cornerRadius)
+                )
+            } else Modifier
+        )
+
+    val finalModifier = if (onClick != null) {
+        baseModifier.clickable(onClick = onClick)
+    } else baseModifier
+
+    Column(modifier = finalModifier) {
+        content()
+    }
+}
+
+// ================================================================
+// COMPACT CARD (для списка)
+// ================================================================
+@Composable
+fun CompactCurrencyCard(
+    rate: CurrencyRate,
+    info: CurrencyInfo,
+    isDark: Boolean,
+    settings: AppSettings,
+    accentColor: Color,
+    onClick: () -> Unit
+) {
+    val isPositive = rate.changePercent >= 0
+    val changeColor = if (isPositive) ThemeManager.Green else ThemeManager.Red
+    val sign = if (isPositive) "+" else ""
+
+    BaseCard(
+        isDark = isDark,
+        cornerRadius = 12.dp,
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (settings.showFlags) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(ThemeManager.getElevated(isDark)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(info.flag, fontSize = 24.sp)
+                    }
+                }
+
+                Column {
+                    Text(
+                        info.code,
+                        color = ThemeManager.getTextPrimary(isDark),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (settings.showCurrencyNames) {
+                        Text(
+                            info.name,
+                            color = ThemeManager.getTextSecondary(isDark),
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    String.format("%.${settings.calculatorPrecision}f", rate.rate),
+                    color = ThemeManager.getTextPrimary(isDark),
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        if (isPositive) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
+                        contentDescription = null,
+                        tint = changeColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        "$sign${String.format("%.2f", rate.changePercent)}%",
+                        color = changeColor,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ================================================================
+// DETAILED CARD (главная карточка)
+// ================================================================
+@Composable
+fun DetailedCurrencyCard(
+    rate: CurrencyRate,
+    info: CurrencyInfo,
+    isDark: Boolean,
+    settings: AppSettings,
+    accentColor: Color,
+    onClick: () -> Unit,
+    onCalculatorClick: () -> Unit = {}
+) {
+    val isPositive = rate.changePercent >= 0
+    val changeColor = if (isPositive) ThemeManager.Green else ThemeManager.Red
+    val sign = if (isPositive) "+" else ""
+
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+    )
+
+    BaseCard(
+        modifier = Modifier.scale(scale),
+        isDark = isDark,
+        cornerRadius = 20.dp,
+        onClick = { isPressed = true; onClick() }
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (settings.showFlags) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(ThemeManager.getElevated(isDark)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(info.flag, fontSize = 28.sp)
+                        }
+                    }
+
+                    Column {
+                        Text(
+                            "${info.code} / BYN",
+                            color = ThemeManager.getTextPrimary(isDark),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (settings.showCurrencyNames) {
+                            Text(
+                                info.name,
+                                color = ThemeManager.getTextSecondary(isDark),
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(changeColor.copy(alpha = 0.15f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            if (isPositive) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                            contentDescription = null,
+                            tint = changeColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            "$sign${String.format("%.2f", rate.changePercent)}%",
+                            color = changeColor,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Main Rate
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(ThemeManager.getElevated(isDark))
+                    .padding(20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "1 ${info.code} =",
+                        color = ThemeManager.getTextSecondary(isDark),
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        String.format("%.${settings.calculatorPrecision}f", rate.rate),
+                        color = ThemeManager.getTextPrimary(isDark),
+                        fontSize = 42.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        "BYN",
+                        color = accentColor,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Buy/Sell
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                RateInfoItem("Buy", rate.buyRate ?: (rate.rate * 0.985), ThemeManager.Green, isDark, settings)
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(40.dp)
+                        .background(ThemeManager.getBorder(isDark))
+                )
+                RateInfoItem("Sell", rate.sellRate ?: (rate.rate * 1.015), ThemeManager.Red, isDark, settings)
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(40.dp)
+                        .background(ThemeManager.getBorder(isDark))
+                )
+                RateInfoItem(
+                    "Spread",
+                    ((rate.sellRate ?: (rate.rate * 1.015)) - (rate.buyRate ?: (rate.rate * 0.985))),
+                    accentColor,
+                    isDark,
+                    settings,
+                    isPercent = true
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Actions
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ActionButton(
+                    icon = Icons.Default.Calculate,
+                    label = "Calculator",
+                    accentColor = accentColor,
+                    isDark = isDark,
+                    modifier = Modifier.weight(1f),
+                    onClick = onCalculatorClick
+                )
+
+                ActionButton(
+                    icon = Icons.Default.Refresh,
+                    label = "Update",
+                    accentColor = accentColor,
+                    isDark = isDark,
+                    modifier = Modifier.weight(1f),
+                    onClick = { }
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(isPressed) {
+        if (isPressed) {
+            delay(150)
+            isPressed = false
+        }
+    }
+}
+
+@Composable
+private fun RateInfoItem(
+    label: String,
+    value: Double,
+    color: Color,
+    isDark: Boolean,
+    settings: AppSettings,
+    isPercent: Boolean = false
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            label,
+            color = ThemeManager.getTextSecondary(isDark),
+            fontSize = 12.sp
+        )
+        Text(
+            if (isPercent) String.format("%.2f%%", value * 100)
+            else String.format("%.${settings.calculatorPrecision}f", value),
+            color = color,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun ActionButton(
+    icon: ImageVector,
+    label: String,
+    accentColor: Color,
+    isDark: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(accentColor.copy(alpha = 0.1f))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+            Text(
+                label,
+                color = accentColor,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+// ================================================================
+// FAVORITE CARD
+// ================================================================
+@Composable
+fun FavoriteCurrencyCard(
+    rate: CurrencyRate,
+    info: CurrencyInfo,
+    isDark: Boolean,
+    accentColor: Color,
+    onClick: () -> Unit
+) {
+    val isPositive = rate.changePercent >= 0
+    val changeColor = if (isPositive) ThemeManager.Green else ThemeManager.Red
+
+    BaseCard(
+        modifier = Modifier.width(140.dp),
+        isDark = isDark,
+        cornerRadius = 16.dp,
+        onClick = onClick
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(info.flag, fontSize = 32.sp)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                info.code,
+                color = ThemeManager.getTextPrimary(isDark),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                String.format("%.3f", rate.rate),
+                color = ThemeManager.getTextPrimary(isDark),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                "${if (isPositive) "+" else ""}${String.format("%.2f", rate.changePercent)}%",
+                color = changeColor,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+// ================================================================
+// SKELETON CARD
+// ================================================================
+@Composable
+fun SkeletonCard(isDark: Boolean, height: Dp = 80.dp) {
+    val shimmerColors = if (isDark) {
+        listOf(Color(0xFF1E1E1E), Color(0xFF2A2A2A), Color(0xFF1E1E1E))
+    } else {
+        listOf(Color(0xFFE0E0E0), Color(0xFFF0F0F0), Color(0xFFE0E0E0))
+    }
+
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val translateAnim = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shimmer"
+    )
+
+    BaseCard(
+        isDark = isDark,
+        cornerRadius = 12.dp,
+        hasBorder = false
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(height)
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = shimmerColors,
+                        start = androidx.compose.ui.geometry.Offset.Zero,
+                        end = androidx.compose.ui.geometry.Offset(x = translateAnim.value, y = 0f)
+                    )
+                )
+        )
+    }
+}
+
+// ================================================================
+// MAIN ACTIVITY
+// ================================================================
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            val context = LocalContext.current
+            val settingsManager = remember { SettingsManager(context) }
+            var settings by remember { mutableStateOf(settingsManager.loadSettings()) }
+
+            val isDark = when (settings.themeMode) {
+                "dark" -> true
+                "light" -> false
+                else -> isSystemInDarkTheme()
+            }
+
+            MaterialTheme(
+                colorScheme = if (isDark) darkColorScheme(
+                    background = ThemeManager.DarkBackground,
+                    surface = ThemeManager.DarkSurface,
+                    primary = getAccentColor(settings.accentColor),
+                    onBackground = Color.White,
+                    onSurface = Color.White
+                ) else lightColorScheme(
+                    background = ThemeManager.LightBackground,
+                    surface = ThemeManager.LightSurface,
+                    primary = getAccentColor(settings.accentColor),
+                    onBackground = Color.Black,
+                    onSurface = Color.Black
+                )
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    MinimalApp(
+                        settings = settings,
+                        isDark = isDark,
+                        onSettingsChange = { new ->
+                            settings = new
+                            settingsManager.saveSettings(new)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ================================================================
+// MAIN APP
+// ================================================================
+@Composable
+fun MinimalApp(
+    settings: AppSettings,
+    isDark: Boolean,
+    onSettingsChange: (AppSettings) -> Unit
+) {
+    val repository = remember { CurrencyRepository() }
+    var rates by remember { mutableStateOf<Map<String, CurrencyRate>>(emptyMap()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedCurrency by remember { mutableStateOf<String?>(null) }
+    var showCalculator by remember { mutableStateOf(false) }
+
+    val accentColor = getAccentColor(settings.accentColor)
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        if (settings.refreshOnStart) {
+            rates = repository.fetchRates(settings)
+            isLoading = false
+        }
+
+        while (settings.autoRefresh && settings.refreshInterval > 0) {
+            delay(settings.refreshInterval * 60_000L)
+            rates = repository.fetchRates(settings)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            selectedCurrency != null -> {
+                DetailScreen(
+                    rate = rates[selectedCurrency]!!,
+                    info = AVAILABLE_CURRENCIES.find { it.code == selectedCurrency }!!,
+                    isDark = isDark,
+                    settings = settings,
+                    accentColor = accentColor,
+                    onBack = { selectedCurrency = null },
+                    onCalculatorClick = {
+                        selectedCurrency = null
+                        showCalculator = true
+                        selectedTab = 1
+                    }
+                )
+            }
+            showCalculator -> {
+                CalculatorScreen(
+                    rates = rates,
+                    isDark = isDark,
+                    settings = settings,
+                    accentColor = accentColor,
+                    onBack = { showCalculator = false }
+                )
+            }
+            else -> {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    when (selectedTab) {
+                        0 -> RatesScreen(
+                            rates = rates,
+                            isLoading = isLoading,
+                            isDark = isDark,
+                            settings = settings,
+                            accentColor = accentColor,
+                            onCurrencyClick = { selectedCurrency = it }
+                        )
+                        1 -> CalculatorScreen(
+                            rates = rates,
+                            isDark = isDark,
+                            settings = settings,
+                            accentColor = accentColor,
+                            onBack = null
+                        )
+                        2 -> SettingsScreen(
+                            settings = settings,
+                            isDark = isDark,
+                            accentColor = accentColor,
+                            onSettingsChange = onSettingsChange
+                        )
+                    }
+                }
+
+                MinimalBottomBar(
+                    selectedTab = selectedTab,
+                    isDark = isDark,
+                    accentColor = accentColor,
+                    onTabSelected = {
+                        selectedTab = it
+                        showCalculator = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+// ================================================================
+// RATES SCREEN
+// ================================================================
+@Composable
+fun RatesScreen(
+    rates: Map<String, CurrencyRate>,
+    isLoading: Boolean,
+    isDark: Boolean,
+    settings: AppSettings,
+    accentColor: Color,
+    onCurrencyClick: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+    ) {
+        Text(
+            text = "Exchange Rates",
+            color = ThemeManager.getTextPrimary(isDark),
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
+        )
+
+        Text(
+            text = "National Bank of Belarus",
+            color = ThemeManager.getTextSecondary(isDark),
+            fontSize = 14.sp,
+            modifier = Modifier.padding(bottom = 24.dp)
+        )
+
+        // Favorites
+        if (settings.favorites.isNotEmpty() && !isLoading) {
+            Text(
+                text = "Favorites",
+                color = ThemeManager.getTextSecondary(isDark),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(bottom = 24.dp)
+            ) {
+                items(settings.favorites) { code ->
+                    val rate = rates[code]
+                    val info = AVAILABLE_CURRENCIES.find { it.code == code }
+                    if (rate != null && info != null) {
+                        FavoriteCurrencyCard(
+                            rate = rate,
+                            info = info,
+                            isDark = isDark,
+                            accentColor = accentColor,
+                            onClick = { onCurrencyClick(code) }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Main Currency
+        val mainRate = rates[settings.defaultCurrency]
+        val mainInfo = AVAILABLE_CURRENCIES.find { it.code == settings.defaultCurrency }
+
+        if (isLoading) {
+            SkeletonCard(isDark, height = 320.dp)
+        } else if (mainRate != null && mainInfo != null) {
+            DetailedCurrencyCard(
+                rate = mainRate,
+                info = mainInfo,
+                isDark = isDark,
+                settings = settings,
+                accentColor = accentColor,
+                onClick = { onCurrencyClick(settings.defaultCurrency) },
+                onCalculatorClick = { onCurrencyClick(settings.defaultCurrency) }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // All Currencies
+        Text(
+            text = "All Currencies",
+            color = ThemeManager.getTextSecondary(isDark),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+
+        if (isLoading) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                repeat(5) {
+                    SkeletonCard(isDark)
+                }
+            }
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(AVAILABLE_CURRENCIES.filter { it.code != "BYN" && it.code != settings.defaultCurrency }) { currency ->
+                    val rate = rates[currency.code]
+                    if (rate != null) {
+                        CompactCurrencyCard(
+                            rate = rate,
+                            info = currency,
+                            isDark = isDark,
+                            settings = settings,
+                            accentColor = accentColor,
+                            onClick = { onCurrencyClick(currency.code) }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(100.dp))
+    }
+}
+
+// ================================================================
+// DETAIL SCREEN
+// ================================================================
+@Composable
+fun DetailScreen(
+    rate: CurrencyRate,
+    info: CurrencyInfo,
+    isDark: Boolean,
+    settings: AppSettings,
+    accentColor: Color,
+    onBack: () -> Unit,
+    onCalculatorClick: () -> Unit
+) {
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = accentColor
+                )
+            }
+            Text(
+                text = "Back to Rates",
+                color = accentColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+
+        DetailedCurrencyCard(
+            rate = rate,
+            info = info,
+            isDark = isDark,
+            settings = settings,
+            accentColor = accentColor,
+            onClick = { },
+            onCalculatorClick = onCalculatorClick
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            StatCard("High (24h)", String.format("%.4f", rate.rate * 1.02), isDark, Modifier.weight(1f))
+            StatCard("Low (24h)", String.format("%.4f", rate.rate * 0.98), isDark, Modifier.weight(1f))
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            StatCard("Change", "${if (rate.changePercent >= 0) "+" else ""}${String.format("%.2f", rate.changePercent)}%", isDark, Modifier.weight(1f))
+            StatCard("Updated", SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(rate.timestamp)), isDark, Modifier.weight(1f))
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        BaseCard(isDark = isDark, cornerRadius = 16.dp) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = "Currency Information",
+                    color = ThemeManager.getTextPrimary(isDark),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                InfoRow("Name", info.name, isDark)
+                InfoRow("Code", info.code, isDark)
+                InfoRow("Symbol", info.symbol.ifEmpty { "-" }, isDark)
+                InfoRow("Region", info.region, isDark)
+                InfoRow("Scale", info.scale.toString(), isDark)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(100.dp))
+    }
+}
+
+@Composable
+private fun StatCard(title: String, value: String, isDark: Boolean, modifier: Modifier = Modifier) {
+    BaseCard(isDark = isDark, cornerRadius = 12.dp, modifier = modifier) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(title, color = ThemeManager.getTextSecondary(isDark), fontSize = 12.sp)
+            Text(value, color = ThemeManager.getTextPrimary(isDark), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String, isDark: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, color = ThemeManager.getTextSecondary(isDark), fontSize = 14.sp)
+        Text(value, color = ThemeManager.getTextPrimary(isDark), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+// ================================================================
+// CALCULATOR SCREEN
+// ================================================================
+@Composable
+fun CalculatorScreen(
+    rates: Map<String, CurrencyRate>,
+    isDark: Boolean,
+    settings: AppSettings,
+    accentColor: Color,
+    onBack: (() -> Unit)?
+) {
+    var amount by remember { mutableStateOf(settings.defaultCalcAmount.toString()) }
+    var fromCurrency by remember { mutableStateOf(settings.defaultCurrency) }
+    var toCurrency by remember { mutableStateOf(settings.secondaryCurrency) }
+    var showFromSelector by remember { mutableStateOf(false) }
+    var showToSelector by remember { mutableStateOf(false) }
+
+    val repository = remember { CurrencyRepository() }
+
+    val inputValue = amount.toDoubleOrNull() ?: 0.0
+    val result = if (rates.isNotEmpty()) {
+        repository.convert(inputValue, fromCurrency, toCurrency, rates)
+    } else 0.0
+
+    val fromInfo = AVAILABLE_CURRENCIES.find { it.code == fromCurrency }!!
+    val toInfo = AVAILABLE_CURRENCIES.find { it.code == toCurrency }!!
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp)
+    ) {
+        if (onBack != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = accentColor)
+                }
+            }
+        } else {
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+
+        Text(
+            text = "Calculator",
+            color = ThemeManager.getTextPrimary(isDark),
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 24.dp)
+        )
+
+        BaseCard(isDark = isDark, cornerRadius = 16.dp) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = "Amount",
+                    color = ThemeManager.getTextSecondary(isDark),
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = androidx.compose.material3.LocalTextStyle.current.copy(
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = ThemeManager.getTextPrimary(isDark)
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = accentColor,
+                        unfocusedBorderColor = ThemeManager.getBorder(isDark),
+                        focusedContainerColor = ThemeManager.getElevated(isDark),
+                        unfocusedContainerColor = ThemeManager.getElevated(isDark)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        BaseCard(isDark = isDark, cornerRadius = 16.dp) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                CurrencySelectorRow("From", fromInfo, isDark) { showFromSelector = true }
+
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    IconButton(
+                        onClick = {
+                            val temp = fromCurrency
+                            fromCurrency = toCurrency
+                            toCurrency = temp
+                        },
+                        modifier = Modifier.background(accentColor.copy(alpha = 0.1f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.SwapVert, contentDescription = "Swap", tint = accentColor)
+                    }
+                }
+
+                CurrencySelectorRow("To", toInfo, isDark) { showToSelector = true }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        BaseCard(isDark = isDark, cornerRadius = 20.dp, hasBorder = false) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Result", color = ThemeManager.getTextSecondary(isDark), fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    String.format("%,.${settings.calculatorPrecision}f", result),
+                    color = ThemeManager.getTextPrimary(isDark),
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(toCurrency, color = accentColor, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+
+                if (rates.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val singleRate = repository.convert(1.0, fromCurrency, toCurrency, rates)
+                    Text(
+                        "1 $fromCurrency = ${String.format("%.4f", singleRate)} $toCurrency",
+                        color = ThemeManager.getTextSecondary(isDark),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf(10, 50, 100, 500, 1000).forEach { quick ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(accentColor.copy(alpha = 0.1f))
+                        .clickable { amount = quick.toString() }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(quick.toString(), color = accentColor, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+
+    if (showFromSelector) {
+        CurrencySelectorDialog(
+            selected = fromCurrency,
+            onSelect = { fromCurrency = it; showFromSelector = false },
+            onDismiss = { showFromSelector = false },
+            isDark = isDark,
+            accentColor = accentColor
+        )
+    }
+
+    if (showToSelector) {
+        CurrencySelectorDialog(
+            selected = toCurrency,
+            onSelect = { toCurrency = it; showToSelector = false },
+            onDismiss = { showToSelector = false },
+            isDark = isDark,
+            accentColor = accentColor
+        )
+    }
+}
+
+@Composable
+private fun CurrencySelectorRow(label: String, currency: CurrencyInfo, isDark: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(ThemeManager.getElevated(isDark))
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column {
+            Text(label, color = ThemeManager.getTextSecondary(isDark), fontSize = 12.sp)
+            Text(
+                "${currency.flag} ${currency.code}",
+                color = ThemeManager.getTextPrimary(isDark),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = ThemeManager.getTextSecondary(isDark))
+    }
+}
+
+@Composable
+private fun CurrencySelectorDialog(
+    selected: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+    isDark: Boolean,
+    accentColor: Color
+) {
+    val grouped = AVAILABLE_CURRENCIES.groupBy { it.region }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = ThemeManager.getSurface(isDark),
+        title = { Text("Select Currency", color = ThemeManager.getTextPrimary(isDark)) },
+        text = {
+            LazyColumn(modifier = Modifier.height(400.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                grouped.forEach { (region, currencies) ->
+                    item {
+                        Text(
+                            region,
+                            color = accentColor,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                        )
+                    }
+                    items(currencies) { currency ->
+                        val isSelected = currency.code == selected
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSelected) accentColor.copy(alpha = 0.1f) else Color.Transparent)
+                                .clickable { onSelect(currency.code) }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(currency.flag, fontSize = 24.sp)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    currency.code,
+                                    color = ThemeManager.getTextPrimary(isDark),
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                                Text(currency.name, color = ThemeManager.getTextSecondary(isDark), fontSize = 12.sp)
+                            }
+                            if (isSelected) {
+                                Icon(Icons.Default.Check, contentDescription = null, tint = accentColor)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = accentColor) }
+        }
+    )
+}
+
+// ================================================================
+// SETTINGS SCREEN
+// ================================================================
+@Composable
+fun SettingsScreen(
+    settings: AppSettings,
+    isDark: Boolean,
+    accentColor: Color,
+    onSettingsChange: (AppSettings) -> Unit
+) {
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(16.dp)
+    ) {
+        Text(
+            "Settings",
+            color = ThemeManager.getTextPrimary(isDark),
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 24.dp, bottom = 24.dp)
+        )
+
+        SettingsSection("Appearance", isDark)
+
+        BaseCard(isDark = isDark, cornerRadius = 16.dp) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Theme", color = ThemeManager.getTextPrimary(isDark), fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 12.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("System", "Light", "Dark").forEach { theme ->
+                        val isSelected = settings.themeMode == theme.lowercase()
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) accentColor else ThemeManager.getElevated(isDark))
+                                .clickable { onSettingsChange(settings.copy(themeMode = theme.lowercase())) }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                theme,
+                                color = if (isSelected) Color.White else ThemeManager.getTextPrimary(isDark),
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider(color = ThemeManager.getBorder(isDark))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text("Accent Color", color = ThemeManager.getTextPrimary(isDark), fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 12.dp))
+
+                val colors = listOf(
+                    "blue" to ThemeManager.Blue, "green" to ThemeManager.Green, "orange" to ThemeManager.Orange,
+                    "red" to ThemeManager.Red, "purple" to ThemeManager.Purple, "pink" to ThemeManager.Pink
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    colors.forEach { (name, color) ->
+                        val isSelected = settings.accentColor == name
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .border(
+                                    width = if (isSelected) 3.dp else 0.dp,
+                                    color = ThemeManager.getTextPrimary(isDark),
+                                    shape = CircleShape
+                                )
+                                .clickable { onSettingsChange(settings.copy(accentColor = name)) }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        SettingsSection("Display", isDark)
+
+        BaseCard(isDark = isDark, cornerRadius = 16.dp) {
+            Column {
+                ToggleSetting("Show Flags", settings.showFlags, { onSettingsChange(settings.copy(showFlags = it)) }, isDark, accentColor)
+                Divider(color = ThemeManager.getBorder(isDark), modifier = Modifier.padding(horizontal = 16.dp))
+                ToggleSetting("Show Currency Names", settings.showCurrencyNames, { onSettingsChange(settings.copy(showCurrencyNames = it)) }, isDark, accentColor)
+                Divider(color = ThemeManager.getBorder(isDark), modifier = Modifier.padding(horizontal = 16.dp))
+                ToggleSetting("Compact Mode", settings.compactMode, { onSettingsChange(settings.copy(compactMode = it)) }, isDark, accentColor)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        SettingsSection("Data", isDark)
+
+        BaseCard(isDark = isDark, cornerRadius = 16.dp) {
+            Column {
+                ToggleSetting("Auto Refresh", settings.autoRefresh, { onSettingsChange(settings.copy(autoRefresh = it)) }, isDark, accentColor)
+
+                if (settings.autoRefresh) {
+                    Divider(color = ThemeManager.getBorder(isDark), modifier = Modifier.padding(horizontal = 16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Refresh Interval", color = ThemeManager.getTextPrimary(isDark))
+                        Text("${settings.refreshInterval} min", color = accentColor, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        TextButton(
+            onClick = { onSettingsChange(AppSettings()) },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.textButtonColors(contentColor = ThemeManager.Red)
+        ) {
+            Text("Reset All Settings", fontWeight = FontWeight.SemiBold)
+        }
+
+        Spacer(modifier = Modifier.height(100.dp))
+    }
+}
+
+@Composable
+private fun SettingsSection(title: String, isDark: Boolean) {
+    Text(
+        title.uppercase(),
+        color = ThemeManager.getTextSecondary(isDark),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.sp,
+        modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)
+    )
+}
+
+@Composable
+private fun ToggleSetting(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, isDark: Boolean, accentColor: Color) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }.padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, color = ThemeManager.getTextPrimary(isDark), fontSize = 16.sp)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(checkedThumbColor = accentColor, checkedTrackColor = accentColor.copy(alpha = 0.5f))
+        )
+    }
+}
+
+// ================================================================
+// BOTTOM NAVIGATION
+// ================================================================
+@Composable
+fun MinimalBottomBar(
+    selectedTab: Int,
+    isDark: Boolean,
+    accentColor: Color,
+    onTabSelected: (Int) -> Unit
+) {
+    val items = listOf(
+        Triple(Icons.Outlined.MonetizationOn, Icons.Filled.MonetizationOn, "Rates"),
+        Triple(Icons.Outlined.Calculate, Icons.Filled.Calculate, "Calc"),
+        Triple(Icons.Outlined.Settings, Icons.Filled.Settings, "Settings")
+    )
+
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        BaseCard(isDark = isDark, cornerRadius = 24.dp, hasBorder = false, hasShadow = !isDark) {
+            Row(modifier = Modifier.padding(4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                items.forEachIndexed { index, (outlineIcon, filledIcon, label) ->
+                    val isSelected = index == selectedTab
+                    val icon = if (isSelected) filledIcon else outlineIcon
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (isSelected) accentColor.copy(alpha = 0.15f) else Color.Transparent)
+                            .clickable { onTabSelected(index) }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(icon, contentDescription = label, tint = if (isSelected) accentColor else ThemeManager.getTextSecondary(isDark), modifier = Modifier.size(22.dp))
+                            if (isSelected) {
+                                Text(label, color = accentColor, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
